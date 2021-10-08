@@ -1,0 +1,163 @@
+<?php 
+namespace kernel\plugins;
+
+use Ramsey\Uuid\Uuid;
+use Aws\S3\S3Client;
+
+/**
+ * 
+ */
+class Minio extends \kernel\baseController {
+
+	private static $s3 = null;
+
+	/**
+	* 
+	* @void 
+	*/
+	private function setup() {
+		if (is_null(self::$s3)) {
+			self::$s3 = new S3Client([
+				'version' => self::$env['MINIO_VERSION'],
+				'region'  => self::$env['MINIO_REGION'],
+				'endpoint' => self::$env['MINIO_ENDPOINT'],
+				'use_path_style_endpoint' => true,
+				'credentials' => [
+					'key'    => self::$env['MINIO_KEY'],
+					'secret' => self::$env['MINIO_SECRET'],
+				],
+			]);
+
+			$result = self::$s3->listBuckets();
+			$buckets = $result['Buckets'];
+			$buckets = array_column($buckets, 'Name');
+
+			if (!in_array(self::$env['IDENTITY_BUCKET'], $buckets)) {
+				try {
+					// Create a bucket
+					$result = self::$s3->createBucket([
+						'Bucket' => self::$env['IDENTITY_BUCKET'],
+					]);
+				} catch (Exception $e) {
+					die(self::output([], 500, ['bucket_error']));
+				}
+			}
+		}
+	}
+
+	/**
+	* 
+	* @return 
+	*/
+	private function upload($s3, $extention, $tmpFile, $ACL='public-read') {
+		try {
+			// sanitize for filename
+			$fileName = Uuid::uuid4();
+			$fileName = $fileName->toString();
+
+			// append to folder
+			$fileName = date('Y-m').'/'.$fileName;
+
+			// avoid replicate name
+			$i = 1;
+			$rawName = $fileName;
+			$fileName = $fileName. '.' .$extention;
+			while ($s3->doesObjectExist(self::$env['IDENTITY_BUCKET'], $fileName)) {
+				$fileName = $rawName . ((string) $i) . '.' . $extention;
+				$i ++;
+			}
+
+			// put file
+			$s3->putObject([
+				'Bucket' 	=> self::$env['IDENTITY_BUCKET'],
+				'Key' 		=> $fileName,
+				'Body' 		=> fopen($tmpFile, 'r'),
+				'ACL' 		=> $ACL,
+			]);
+
+			return $fileName;
+		} catch (\Aws\S3\Exception\S3Exception $e) {
+			// return $e->getMessage();
+			return false;
+		}
+
+	}
+	
+	/**
+	* Function: sanitize
+	* Returns a sanitized string, typically for URLs.
+	*
+	* Parameters:
+	*     $string - The string to sanitize.
+	*     $force_lowercase - Force the string to lowercase?
+	*     $anal - If set to *true*, will remove all non-alphanumeric characters.
+	*/
+	private function sanitize($string, $force_lowercase = true, $anal = false) {
+		$strip = array("~", "`", "!", "@", "#", "$", "%", "^", "&", "*", "(", ")", "_", "=", "+", "[", "{", "]",
+			"}", "\\", "|", ";", ":", "\"", "'", "&#8216;", "&#8217;", "&#8220;", "&#8221;", "&#8211;", "&#8212;",
+			"â€”", "â€“", ",", "<", ">", "?"); # remove . and /
+		$clean = trim(str_replace($strip, "", strip_tags($string)));
+		$clean = preg_replace('/\s+/', "-", $clean);
+		$clean = ($anal) ? preg_replace("/[^a-zA-Z0-9]/", "", $clean) : $clean ;
+		return ($force_lowercase) ? ((function_exists('mb_strtolower')) ? mb_strtolower($clean, 'UTF-8') : strtolower($clean)) : $clean;
+	}
+
+	/*
+	* 
+	*/
+	private function download($s3, $objectName) {
+		$retrive = $s3->getObject([
+			'Bucket' => self::$env['IDENTITY_BUCKET'],
+			'Key'    => $objectName,
+		]);
+
+		// Print the body of the result by indexing into the result object.
+		echo $retrive['Body'];
+	}
+
+	/*
+	* 
+	*/
+	private function link($s3, $objectName, $expire='+10 minutes') {
+		// Get a command object from the client
+		$command = $s3->getCommand('GetObject', [
+			'Bucket' => self::$env['IDENTITY_BUCKET'],
+			'Key'    => $objectName
+		]);
+
+		// Create a pre-signed URL for a request with duration of 10 miniutes
+		$presignedRequest = $s3->createPresignedRequest($command, $expire);
+
+		// Get the actual presigned-url
+		$presignedUrl =  (string)  $presignedRequest->getUri();
+		
+		return $presignedUrl;
+	}
+
+	/**
+	* 
+	* @return 
+	*/
+	public function put($file) {
+		$this->setup();
+
+		$ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+		$tmp = $file['tmp_name'];
+
+		$objectName = $this->upload(self::$s3, $ext, $tmp);
+
+		return $objectName;
+	}
+
+	/**
+	* 
+	* @return 
+	*/
+	public function presignedUrl($objectName) {
+		$this->setup();
+
+		$url = $this->link(self::$s3, $objectName);
+
+		return $url;
+	}
+}

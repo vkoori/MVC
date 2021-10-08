@@ -1,0 +1,20 @@
+{
+    "require": {
+        "nikic/fast-route": "^1.3",
+        "spatie/image-optimizer": "^1.4",
+        "clancats/hydrahon": "dev-master#ad942f496635db87c15f4bc5621bbee0ead4f570",
+        "phpfastcache/phpfastcache": "^8.0",
+        "rakit/validation": "^1.4",
+        "monolog/monolog": "^2.3",
+        "aws/aws-sdk-php": "^3.194",
+        "ramsey/uuid": "^4.2"
+    },
+	"autoload": {
+		"classmap": ["kernel"],
+        "files": [
+            "bootstrap/conf_loader.php", 
+            "bootstrap/env.php", 
+            "bootstrap/i18.php"
+        ]
+	}
+}

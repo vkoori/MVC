@@ -1,0 +1,14 @@
+RewriteEngine on
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /kargosha-new/dideshow/index.php?path=$1 [NC,L,QSA]
+
+<Files ~ "\.env$">
+    Order allow,deny
+    Deny from all
+</Files>
+
+
+# location / {
+# 	try_files $uri $uri/ /index.php;
+# }
